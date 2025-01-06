@@ -7,6 +7,9 @@ import openai
 import time
 from peft import PeftModel, PeftConfig
 from tqdm import *
+import numpy as np
+from pyramidkv.monkeypatch import replace_llama,replace_mistral
+from pyramidkv.temp_cache import temp_cache
 
 GPT_KEY = "Put your OpenAI API key here"
 
@@ -52,9 +55,9 @@ def run_llama31_8b_length_constrained_exps():
     # )
 
     model_path = "/root/autodl-tmp/model/Llama-3.1-8B-Instruct"
-    attn_implementation = "eager"
+    attn_implementation = "flash_attention_2"
     max_capacity_prompts = 64
-    method = "FullKV"
+    method = "iter-ada-SnapKV"
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_path,
@@ -62,8 +65,7 @@ def run_llama31_8b_length_constrained_exps():
         padding_side="left"
     )
 
-    from pyramidkv.monkeypatch import replace_llama,replace_mistral
-    replace_llama(args.method.lower())
+    replace_llama(method.lower())
     
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
@@ -100,18 +102,7 @@ def run_llama31_8b_length_constrained_exps():
             if method.lower() in ["snapkv","pyramidkv","h2o","cam", "l2norm", "adakv", "headkv","iter-ada-pyrakv","iter-ada-snapkv"]:
                 window_sizes = 8
             elif method.lower() in ["streamingllm"]:
-                window_sizes = max_capacity_prompts - 4
-
-            if method.lower() =='headkv':
-                with open(args.head_path, 'r') as file:
-                    head_list = json.loads(file.readline())
-                head_score_list = [np.mean(l[1]) for l in head_list.items()]
-                head_score_list = torch.tensor(head_score_list / sum(head_score_list))
-                total_attention = head_score_list.reshape(model.config.num_hidden_layers, model.config.num_attention_heads)
-                total_pool_capacity = (args.max_capacity_prompts // args.head_beta) * model.config.num_hidden_layers * model.config.num_attention_heads
-                min_num = (args.max_capacity_prompts - args.max_capacity_prompts // args.head_beta)
-                head_capacity = torch.round(total_attention * total_pool_capacity + min_num).int()
-                model.model.config.head_capacity = head_capacity    
+                window_sizes = max_capacity_prompts - 4  
 
             kernel_sizes = 7
             pooling = "maxpool"
@@ -136,11 +127,11 @@ def run_llama31_8b_length_constrained_exps():
 
     for task_type in task_type_list:
         # for length in ["2k", "4k", "8k", "16k"]:
-        for length in ["2k", "4k", "8k", "16k"]:
+        for length in ["2k","4k","8k", "16k"]:
             num = 0
             token_sum = 0
             load_path = "data/length_constrained_data/" + task_type + "_" + length + ".jsonl"
-            output_path = os.path.join("results", "llama31_8b",
+            output_path = os.path.join("results", "llama31_8b_" + method,
                                        task_type + "_" + length + "_results.jsonl")
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
