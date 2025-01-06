@@ -51,14 +51,19 @@ def run_llama31_8b_length_constrained_exps():
     #     device_map="auto",
     # )
 
-    model_path = "/root/autodl-tmp/model/Meta-Llama-3-8B"
+    model_path = "/root/autodl-tmp/model/Llama-3.1-8B-Instruct"
     attn_implementation = "eager"
+    max_capacity_prompts = 64
+    method = "FullKV"
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_path,
         use_fast=True,
         padding_side="left"
     )
+
+    from pyramidkv.monkeypatch import replace_llama,replace_mistral
+    replace_llama(args.method.lower())
     
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
@@ -91,6 +96,44 @@ def run_llama31_8b_length_constrained_exps():
     token_sum = 0
     num = 0
 
+    if method != "FullKV":
+            if method.lower() in ["snapkv","pyramidkv","h2o","cam", "l2norm", "adakv", "headkv","iter-ada-pyrakv","iter-ada-snapkv"]:
+                window_sizes = 8
+            elif method.lower() in ["streamingllm"]:
+                window_sizes = max_capacity_prompts - 4
+
+            if method.lower() =='headkv':
+                with open(args.head_path, 'r') as file:
+                    head_list = json.loads(file.readline())
+                head_score_list = [np.mean(l[1]) for l in head_list.items()]
+                head_score_list = torch.tensor(head_score_list / sum(head_score_list))
+                total_attention = head_score_list.reshape(model.config.num_hidden_layers, model.config.num_attention_heads)
+                total_pool_capacity = (args.max_capacity_prompts // args.head_beta) * model.config.num_hidden_layers * model.config.num_attention_heads
+                min_num = (args.max_capacity_prompts - args.max_capacity_prompts // args.head_beta)
+                head_capacity = torch.round(total_attention * total_pool_capacity + min_num).int()
+                model.model.config.head_capacity = head_capacity    
+
+            kernel_sizes = 7
+            pooling = "maxpool"
+
+            layers = len(model.model.layers)
+            if method.lower() == "iter-ada-pyrakv":
+                temp_cache.ori_capa = max_capacity_prompts
+            # check if window_sizes is a list
+            if not isinstance(window_sizes, list):
+                window_sizes = [window_sizes] * layers
+            if not isinstance(max_capacity_prompts, list):
+                max_capacity_prompts = [max_capacity_prompts] * layers
+            if not isinstance(kernel_sizes, list):
+                kernel_sizes = [kernel_sizes] * layers
+            for i in range(layers):
+                model.model.layers[i].self_attn.config.window_size = window_sizes[i]
+                model.model.layers[i].self_attn.config.max_capacity_prompt = max_capacity_prompts[i]
+                model.model.layers[i].self_attn.config.kernel_size = kernel_sizes[i]
+                model.model.layers[i].self_attn.config.pooling = pooling
+                # model.model.layers[i].self_attn.config.merge = args.merge
+                # model.model.layers[i].self_attn.config.floor = args.floor
+
     for task_type in task_type_list:
         # for length in ["2k", "4k", "8k", "16k"]:
         for length in ["2k", "4k", "8k", "16k"]:
@@ -103,7 +146,7 @@ def run_llama31_8b_length_constrained_exps():
 
             with open(load_path, "r", encoding="utf-8") as f:
                 data_list = [json.loads(line) for line in f]
-            for data_dict in data_list:
+            for data_dict in tqdm(data_list):
                 instruction = data_dict["instruction"]
                 messages = [{"role": "user", "content": instruction}]
                 if length == "16k":
