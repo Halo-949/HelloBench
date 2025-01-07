@@ -2,10 +2,10 @@ import json
 import os
 import time
 import nltk
-import openai
+from openai import OpenAI
 
 
-GPT_KEY = "Put your OpenAI API key here"
+GPT_KEY = "sk-w2IJL4oBz7KCTR5i2Fvp5hcndzp9NYckoYFjXMEV3ENgZr14"
 SYS_PROMPT = """You are a helpful evaluator. Your task is to evaluate the checklists of the responses given by the Large Language Models (LLMs) based on user instructions. These checklists consist of yes or no questions."""
 USER_PROMPT = """Your core task is to evaluate the checklists based on the user's instruction and LLM's response, with each checklist item being a yes or no question indicating a specific aspect that the LLM's response should meet. You need to judge the checklist item based on the instruction and response. The evaluation results are scored from 0 to 1, with 5 scores in total, which are:
 
@@ -211,12 +211,16 @@ def gpt4o_ckwise_evaluation_length_constrained_exps(model_name="gpt4o", category
     :param category: evaluated category, if not None
     """
     task_type_list = ["heuristic_text_generation"]
-    client = openai.Client(api_key=GPT_KEY)
+    client = OpenAI(
+        # openai系列的sdk，包括langchain，都需要这个/v1的后缀
+        base_url='https://api.openai-proxy.org/v1',
+        api_key='sk-w2IJL4oBz7KCTR5i2Fvp5hcndzp9NYckoYFjXMEV3ENgZr14',
+    )
 
     for task_type in task_type_list:
-        for length in ["2k", "4k", "8k", "16k"]:
+        for length in ["2k"]:    # ["2k", "4k", "8k", "16k"]:
             # Construct paths for checklist and response data
-            ck_path = f"HelloBench/length_constrained_experiments_data/{task_type}_{length}.jsonl"
+            ck_path = f"data/length_constrained_data/{task_type}_{length}.jsonl"
             response_path = f"results/{model_name}/{task_type}_{length}_results.jsonl"
             output_path = os.path.join("ckwise_results", model_name, f"{task_type}_{length}_results.jsonl")
 
@@ -508,11 +512,11 @@ if __name__ == "__main__":
     # - internlm2_5_7b_chat
     # - internlm2_5_7b_chat_1m
     # - gemini_1_5_pro
-    model_name = "o1_mini"
+    model_name = "llama31_8b_iter-ada-SnapKV"
     category = None
     # Uncomment the following lines to evaluate the models
     # gpt4o_ckwise_evaluation(task_type_list, model_name, category)
-    # gpt4o_ckwise_evaluation_length_constrained_exps(model_name, category)
+    gpt4o_ckwise_evaluation_length_constrained_exps(model_name, category)
     model_name_list = ["mistral_large_api"]
     # Uncomment the following lines to evaluate the models
     # llm_eval(model_name_list=model_name_list)
