@@ -57,7 +57,7 @@ def run_llama31_8b_length_constrained_exps():
     model_path = "/root/autodl-tmp/model/Llama-3.1-8B-Instruct"
     attn_implementation = "flash_attention_2"
     max_capacity_prompts = 64
-    method = "iter-ada-SnapKV"
+    method = "SnapKV"   # Support FullKV, PyramidKV, SnapKV, H2O, StreamingLLM, CAM, L2Norm, iter-ada-pyraKV, iter-ada-SnapKV
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_path,
@@ -127,7 +127,7 @@ def run_llama31_8b_length_constrained_exps():
 
     for task_type in task_type_list:
         # for length in ["2k", "4k", "8k", "16k"]:
-        for length in ["2k","4k","8k", "16k"]:
+        for length in ["2k"]:
             num = 0
             token_sum = 0
             load_path = "data/length_constrained_data/" + task_type + "_" + length + ".jsonl"
@@ -143,16 +143,17 @@ def run_llama31_8b_length_constrained_exps():
                 if length == "16k":
                     max_tokens = 24000
                 else:
-                    max_tokens = 16384
+                    max_tokens = 8192          # 16384
 
                 response = pipeline(messages, max_new_tokens=max_tokens, temperature=0.8)[0]["generated_text"][-1][
                     "content"]
-
-                print(response)
                 
                 token_count = len(tokenizer.encode(response))
-                token_sum += token_count
-                num+=1
+                print("Word Count:", token_count)
+                if token_count < 8192:
+                    token_sum += token_count
+                    num+=1
+                    print("avg Word Count:", token_sum/num)
 
                 output_dict = {"id": data_dict["id"], "instruction": instruction, "response": response}
                 with open(output_path, "a", encoding="utf-8") as f:
